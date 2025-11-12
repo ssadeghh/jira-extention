@@ -7,7 +7,7 @@
   let BG_RELOAD_WATCHDOG_MS = 0;  
   let MESSAGE_HEADER = "incident جدید اضافه شد";
 
-  const GADGET_CONTENT_SELECTOR = "#gadget-40027, .gadget-40027";
+  const PATH_REGEX = /^\/secure\//;
 
   const TABLE_BODY_SELECTOR = "table.issue-table > tbody";
   const TOTAL_LINK_SELECTOR = "#total-tickets";
@@ -203,6 +203,17 @@
     });
     return map;
   }
+  function collectAllRowsInfo() {
+    const aggregate = new Map();
+    document.querySelectorAll(TABLE_BODY_SELECTOR).forEach((tbody) => {
+      collectRowsInfo(tbody).forEach((info, key) => {
+        if (!aggregate.has(key)) {
+          aggregate.set(key, info);
+        }
+      });
+    });
+    return aggregate;
+  }
   function debounce(fn, ms) {
     let t = null;
     return (...args) => {
@@ -263,12 +274,11 @@
     return any ? total : null;
   }
 
-  let _tbody = null;
-  let _content = null;
+  let _tbodies = new Set();
   let _evaluateLock = false;
 
   function evaluateNow(manual = false) {
-    if (_evaluateLock || !_tbody) return;
+    if (_evaluateLock || !_tbodies.size) return;
     _evaluateLock = true;
 
     try {
@@ -276,7 +286,7 @@
 
       const prevNow = new Set(state.lastNow || []);
 
-      const nowMap = collectRowsInfo(_tbody);
+      const nowMap = collectAllRowsInfo();
       const nowKeys = new Set(nowMap.keys());
       const newOnes = [];
 
@@ -298,74 +308,74 @@
         if (newOnes.length) console.table(newOnes.map(k => ({ newKey: k })));
       });
 
-      let currentTotal = parseTotal(_content);
-if (currentTotal != null) {
-  record("TOTAL_READ", { currentTotal });
+      let currentTotal = parseTotal(document);
+      if (currentTotal != null) {
+        record("TOTAL_READ", { currentTotal });
 
-  // اگر اولین بار است
-  if (state.lastTotal == null) {
-    const persisted = loadTotal(state.idPart);
-    state.lastTotal = persisted == null ? currentTotal : persisted;
-    saveTotal(state.idPart, state.lastTotal);
-  }
+        // اگر اولین بار است
+        if (state.lastTotal == null) {
+          const persisted = loadTotal(state.idPart);
+          state.lastTotal = persisted == null ? currentTotal : persisted;
+          saveTotal(state.idPart, state.lastTotal);
+        }
 
-  // Fallback: اگر total بالا رفت ولی newOnes خالی است، از اختلاف نسبت به lastNow استفاده کن
-  if (USE_TOTAL_DELTA_FALLBACK && newOnes.length === 0 && state.lastTotal != null && currentTotal > state.lastTotal) {
-    const nowMap2 = collectRowsInfo(_tbody);
-    const nowKeys2 = new Set(nowMap2.keys());
+        // Fallback: اگر total بالا رفت ولی newOnes خالی است، از اختلاف نسبت به lastNow استفاده کن
+        if (USE_TOTAL_DELTA_FALLBACK && newOnes.length === 0 && state.lastTotal != null && currentTotal > state.lastTotal) {
+          const nowMap2 = collectAllRowsInfo();
+          const nowKeys2 = new Set(nowMap2.keys());
 
-    // کلیدهایی که الان هست ولی در ارزیابی قبلی نبود
-    const maybeNew = [];
-    nowKeys2.forEach(k => { if (!prevNow.has(k)) maybeNew.push(k); });
-    
-    if (maybeNew.length) {
-      const ttlMap2 = loadTTLMap(state.idPart);
-      let sent = 0;
+          // کلیدهایی که الان هست ولی در ارزیابی قبلی نبود
+          const maybeNew = [];
+          nowKeys2.forEach(k => { if (!prevNow.has(k)) maybeNew.push(k); });
 
-      for (const key of maybeNew) {
-        const info = nowMap2.get(key);
-        if (!info) continue;
+          if (maybeNew.length) {
+            const ttlMap2 = loadTTLMap(state.idPart);
+            let sent = 0;
 
-        // احترام به TTL
-        const last = ttlMap2[key] || 0;
-        if (Date.now() - last < TTL_MS) continue;
+            for (const key of maybeNew) {
+              const info = nowMap2.get(key);
+              if (!info) continue;
 
-        const text = buildMessageForOne(info);
-        notifySPlus(text);
+              // احترام به TTL
+              const last = ttlMap2[key] || 0;
+              if (Date.now() - last < TTL_MS) continue;
 
-        ttlMap2[key] = Date.now();
-        sent++;
-        state.baseline.add(key); // تا دوباره تکرار نشود
+              const text = buildMessageForOne(info);
+              notifySPlus(text);
+
+              ttlMap2[key] = Date.now();
+              sent++;
+              state.baseline.add(key); // تا دوباره تکرار نشود
+            }
+
+            saveBaseline(state.idPart, state.baseline);
+            saveTTLMap(state.idPart, ttlMap2);
+            record("TOTAL_DELTA_FALLBACK_SENT", { candidates: maybeNew.length, sent });
+          } else {
+            record("TOTAL_DELTA_NO_CANDIDATE");
+          }
+        }
+
+        // در هر صورت، آخرش total ذخیره‌شده را هم‌گام کن
+        if (currentTotal !== state.lastTotal) {
+          state.lastTotal = currentTotal;
+          saveTotal(state.idPart, currentTotal);
+        }
       }
-
-      saveBaseline(state.idPart, state.baseline);
-      saveTTLMap(state.idPart, ttlMap2);
-      record("TOTAL_DELTA_FALLBACK_SENT", { candidates: maybeNew.length, sent });
-    } else {
-      record("TOTAL_DELTA_NO_CANDIDATE");
-    }
-  }
-
-  // در هر صورت، آخرش total ذخیره‌شده را هم‌گام کن
-  if (currentTotal !== state.lastTotal) {
-    state.lastTotal = currentTotal;
-    saveTotal(state.idPart, currentTotal);
-  }
-}
 
 
       const ttlMap = loadTTLMap(state.idPart);
 
-       // از baseline حذف کن و TTL آنها را پاک کن تا اگر برگشتند، دوباره نوتیف شوند
-       if (removed.length) {
-         removed.forEach((k) => {
-           state.baseline.delete(k);
-           if (k in ttlMap) delete ttlMap[k];
-         });
-         saveBaseline(state.idPart, state.baseline);
-         saveTTLMap(state.idPart, ttlMap);
-         record("REMOVED_PURGED", { count: removed.length, keys: removed });
-       }
+      // از baseline حذف کن و TTL آنها را پاک کن تا اگر برگشتند، دوباره نوتیف شوند
+      if (removed.length) {
+        removed.forEach((k) => {
+          state.baseline.delete(k);
+          if (k in ttlMap) delete ttlMap[k];
+        });
+        saveBaseline(state.idPart, state.baseline);
+        saveTTLMap(state.idPart, ttlMap);
+        record("REMOVED_PURGED", { count: removed.length, keys: removed });
+      }
 
       if (state.baseline.size === 0) {
         state.baseline = nowKeys;
@@ -425,7 +435,13 @@ if (currentTotal != null) {
 
   const debouncedEvaluate = debounce(() => evaluateNow(false), 300);
 
-  function attachObservers(tbody) {
+  const tbodyObservers = new Map();
+  let intervalId = null;
+  let docObserver = null;
+
+  function observeTbody(tbody) {
+    if (!tbody || tbodyObservers.has(tbody)) return;
+
     const obsRows = new MutationObserver((mutList) => {
       let addedTr = 0;
       mutList.forEach(m => {
@@ -439,31 +455,52 @@ if (currentTotal != null) {
       debouncedEvaluate();
     });
     obsRows.observe(tbody, { childList: true });
+    tbodyObservers.set(tbody, obsRows);
+  }
 
-    const obsSwap = new MutationObserver(() => {
-      const newTbody = _content.querySelector(TABLE_BODY_SELECTOR);
-      if (newTbody && newTbody !== _tbody) {
-        record("TBODY_SWAP");
-        try { obsRows.disconnect(); } catch {}
-        _tbody = newTbody;
-        attachObservers(_tbody);
-        evaluateNow(false);
+  function refreshTbodyList() {
+    const current = new Set(Array.from(document.querySelectorAll(TABLE_BODY_SELECTOR)));
+    current.forEach(tb => {
+      _tbodies.add(tb);
+      observeTbody(tb);
+    });
+
+    Array.from(tbodyObservers.keys()).forEach(tb => {
+      if (!document.contains(tb) || !current.has(tb)) {
+        try { tbodyObservers.get(tb)?.disconnect(); } catch {}
+        tbodyObservers.delete(tb);
+        _tbodies.delete(tb);
       }
     });
-    obsSwap.observe(_content, { childList: true, subtree: true });
+  }
 
-    const intervalId = setInterval(() => {
+  function attachObservers() {
+    refreshTbodyList();
+
+    if (docObserver) {
+      try { docObserver.disconnect(); } catch {}
+    }
+    docObserver = new MutationObserver(() => {
+      refreshTbodyList();
+      debouncedEvaluate();
+    });
+    docObserver.observe(document.body || document, { childList: true, subtree: true });
+
+    if (intervalId) clearInterval(intervalId);
+    intervalId = setInterval(() => {
       record("INTERVAL_EVAL");
       evaluateNow(false);
     }, 5000);
 
     window.addEventListener("beforeunload", () => {
-      try { obsRows.disconnect(); } catch {}
-      try { obsSwap.disconnect(); } catch {}
-      clearInterval(intervalId);
-    });
+      tbodyObservers.forEach(obs => { try { obs.disconnect(); } catch {} });
+      tbodyObservers.clear();
+      _tbodies.clear();
+      if (docObserver) { try { docObserver.disconnect(); } catch {} docObserver = null; }
+      if (intervalId) clearInterval(intervalId);
+    }, { once: true });
 
-    record("OBS_ATTACHED");
+    record("OBS_ATTACHED", { bodies: _tbodies.size });
   }
 
   let refreshIntervalId = null;
@@ -539,32 +576,32 @@ if (currentTotal != null) {
   });
 
   async function main() {
-    loadUserWatcherSettings();
-
-    _content = await waitForSelector(GADGET_CONTENT_SELECTOR, document, 15000).catch(() => null);
-
-    if (!_content) {
-      record("CONTENT_NOT_FOUND", { sel: GADGET_CONTENT_SELECTOR });
-      startRefreshTimers();
+    if (!PATH_REGEX.test(location.pathname || "")) {
+      record("PATH_SKIP", { pathname: location.pathname });
       return;
     }
-    state.idPart = (_content.id || "gadget-40027").toString();
-    record("CONTENT_FOUND", { idPart: state.idPart });
 
-    _tbody = await waitForSelector(TABLE_BODY_SELECTOR, _content, 20000).catch(() => null);
-    if (!_tbody) {
+    loadUserWatcherSettings();
+
+    const firstTbody = await waitForSelector(TABLE_BODY_SELECTOR, document, 20000).catch(() => null);
+    if (!firstTbody) {
       record("TBODY_NOT_FOUND", { sel: TABLE_BODY_SELECTOR });
       startRefreshTimers();
       return;
     }
-    record("TBODY_FOUND", { rows: _tbody.querySelectorAll("tr.issuerow").length });
+
+    _tbodies.add(firstTbody);
+    observeTbody(firstTbody);
+
+    state.idPart = `secure:${location.pathname}`;
+    record("TBODY_FOUND", { rows: firstTbody.querySelectorAll("tr.issuerow").length });
 
     state.baseline = loadBaseline(state.idPart);
     state.lastTotal = loadTotal(state.idPart);
     record("LOAD_STATE", { baseline: state.baseline.size, lastTotal: state.lastTotal });
 
     evaluateNow(false);
-    attachObservers(_tbody);
+    attachObservers();
 
     startRefreshTimers();
   }
