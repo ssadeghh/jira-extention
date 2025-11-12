@@ -7,10 +7,14 @@
   let BG_RELOAD_WATCHDOG_MS = 0;  
   let MESSAGE_HEADER = "incident جدید اضافه شد";
 
-  const PATH_REGEX = /^\/secure\//;
+  const PATH_REGEX = /^\/secure\/Dashboard\.jspa$/;
 
   const TABLE_BODY_SELECTOR = "table.issue-table > tbody";
   const TOTAL_LINK_SELECTOR = "#total-tickets";
+
+  const ALLOWED_GADGET_IDS = new Set(["40027"]);
+
+  const MIN_DUPLICATE_NOTIFY_GAP_MS = 5000;
 
   const USE_TOTAL_DELTA_FALLBACK = true;
 
@@ -206,6 +210,14 @@
   function collectAllRowsInfo() {
     const aggregate = new Map();
     document.querySelectorAll(TABLE_BODY_SELECTOR).forEach((tbody) => {
+      if (ALLOWED_GADGET_IDS.size) {
+        const gadget = tbody.closest(".gadget");
+        const dataId = gadget?.getAttribute("data-id");
+        if (dataId && !ALLOWED_GADGET_IDS.has(dataId)) {
+          record("SKIP_GADGET", { dataId });
+          return;
+        }
+      }
       collectRowsInfo(tbody).forEach((info, key) => {
         if (!aggregate.has(key)) {
           aggregate.set(key, info);
@@ -222,7 +234,21 @@
     };
   }
 
+  let lastNotifyText = "";
+  let lastNotifyAt = 0;
+
   function notifySPlus(text) {
+    if (
+      typeof text === "string" &&
+      text === lastNotifyText &&
+      Date.now() - lastNotifyAt < MIN_DUPLICATE_NOTIFY_GAP_MS
+    ) {
+      record("NOTIFY_SPLUS_SUPPRESSED_DUP", { text });
+      return;
+    }
+
+    lastNotifyText = text;
+    lastNotifyAt = Date.now();
     try {
       record("NOTIFY_SPLUS_REQ", { text });
       chrome.runtime.sendMessage({ type: "TASK_ADDED", text }, (resp) => {
