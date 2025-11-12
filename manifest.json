@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Jira Gadget Watcher → SPlus Notifier",
+  "version": "1.2.0",
+  "description": "On each refresh, check gadget table for new issues and notify via SPlus.",
+  "permissions": ["tabs", "scripting", "storage", "alarms", "webNavigation"],
+  "host_permissions": ["https://web.splus.ir/*"],
+  "optional_host_permissions": ["*://*/*"],
+
+  "background": { "service_worker": "background.js" },
+
+  "content_scripts": [
+    {
+      "matches": ["https://web.splus.ir/*"],
+      "js": ["splus.js"],
+      "run_at": "document_idle",
+      "all_frames": true,
+      "match_about_blank": true
+    }
+  ],
+
+  "options_ui": { "page": "options.html", "open_in_tab": true },
+
+  "action": {
+    "default_title": "Jira Watcher Settings",
+    "default_popup": "popup.html"
+  }
+}

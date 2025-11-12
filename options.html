@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+  <meta charset="utf-8" />
+  <title>تنظیمات افزونه</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; max-width: 720px; }
+    label { display: block; margin: 12px 0 4px; }
+    input[type="text"], input[type="number"] { width: 100%; padding: 8px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .hint { color: #666; font-size: 12px; }
+    button { margin-top: 16px; padding: 10px 16px; }
+  </style>
+</head>
+<body>
+  <h2>تنظیمات</h2>
+
+  <label>آدرس JIRA (origin)</label>
+  <input id="jiraOrigin" type="text" placeholder="https://jira.example.com" />
+
+  <label>الگوی مسیر JIRA (glob)</label>
+  <input id="jiraPathGlob" type="text" value="/secure/*" />
+  <div class="hint">مثال: /secure/* یا /issues/* — با origin ترکیب می‌شود.</div>
+
+  <div class="row">
+    <div>
+      <label>بازهٔ polling بک‌گراند (دقیقه)</label>
+      <input id="pollMinutes" type="number" min="1" step="1" value="1" />
+      <div class="hint">کروم برای alarms کمتر از ۱ دقیقه اجازه نمی‌دهد.</div>
+    </div>
+    <div>
+      <label>بازهٔ رفرش صفحهٔ JIRA (میلی‌ثانیه)</label>
+      <input id="pageAutoRefreshMs" type="number" min="0" step="1000" value="0" />
+      <div class="hint">۰ یعنی خاموش. این داخل خود صفحه اجرا می‌شود.</div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div>
+      <label>واچ‌داگ بک‌گراند (ms)</label>
+      <input id="bgWatchdogMs" type="number" min="0" step="1000" value="0" />
+      <div class="hint">۰ یعنی خاموش. اگر throttling شدید شد، رفرش اجباری می‌دهد.</div>
+    </div>
+    <div>
+      <label>فاصلهٔ ارسال به SPlus (ms)</label>
+      <input id="sendGapMs" type="number" min="200" step="100" value="800" />
+    </div>
+  </div>
+
+  <label>لینک چت SPlus</label>
+  <input id="splusUrl" type="text" placeholder="https://web.splus.ir/#45913396" />
+
+  <button id="save">ذخیره</button>
+  <span id="status" class="hint"></span>
+
+  <script src="options.js"></script>
+</body>
+</html>
