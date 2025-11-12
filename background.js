@@ -63,31 +63,23 @@
       } catch { /* ignore */ }
 
       // سپس دوباره با الگوی فعلی ثبت کن
+      const base = settings.jiraOrigin.replace(/\/$/, "");
+      const patterns = Array.from(new Set([
+        pattern,                    // مثلا https://jira.example.com/secure/*
+        `${base}/plugins/*`,        // گجت‌ها/iframeها
+        `${base}/issues/*`,         // لیست‌ها
+        `${base}/browse/*`,         // صفحات تیکت
+        `${base}/*`                 // تور آخِر: هر چی زیر همین اوریجنه
+      ]));
+
       await chrome.scripting.registerContentScripts([{
         id: JIRA_CS_ID,
         js: ["watcher.js"],
-        matches: [pattern],
+        matches: patterns,
         runAt: "document_idle",
         allFrames: true,
         persistAcrossSessions: true
       }]);
-      const base = settings.jiraOrigin.replace(/\/$/, "");
-     const patterns = Array.from(new Set([
-       pattern,                    // مثلا https://jira.example.com/secure/*
-       `${base}/plugins/*`,        // گجت‌ها/iframeها
-       `${base}/issues/*`,         // لیست‌ها
-       `${base}/browse/*`,         // صفحات تیکت
-       `${base}/*`                 // تور آخِر: هر چی زیر همین اوریجنه
-     ]));
-
-     await chrome.scripting.registerContentScripts([{
-       id: JIRA_CS_ID,
-       js: ["watcher.js"],
-       matches: patterns,
-       runAt: "document_idle",
-       allFrames: true,
-       persistAcrossSessions: true
-     }]);
 
       _lastPattern = pattern;
     })();
